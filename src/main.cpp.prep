@@ -1,0 +1,621 @@
+
+                   
+                 
+                 
+              
+                  
+                  
+
+                         
+                    
+                  
+
+                    
+                   
+
+                                                                                                
+
+
+KTCLASS()
+class MyClass {
+public:
+    KTPROP() float my_value = .0f;
+};
+
+std::vector<token> tokens;
+
+// AST BEGIN
+
+enum ast_node_type {
+    ast_unknown,
+    ast_function_decl,
+    ast_struct_decl,
+    ast_enum_decl,
+    
+    ast_function_call,
+    ast_var_decl
+};
+
+struct ast_node {
+
+};
+
+// AST END
+
+inline bool tok_name_match(const token& tok, const char* name) {
+    size_t len = strlen(name);
+    if(tok.length != len) {
+        return false;
+    }
+    return strncmp(tok.string, name, len) == 0;
+}
+
+enum decl_type {
+    decl_namespace,
+    decl_struct,
+    decl_class,
+    decl_enum,
+    decl_union,
+    decl_function
+};
+
+MULTILINE_MACRO(Test)
+
+int main(int argc, char** argv) {
+    if(argc < 2) {
+        return 1;
+    }
+
+    std::string fname = argv[1];
+    printf("Parsing file %s...", fname.c_str());
+    std::ifstream file(fname);
+    if (!file.is_open()) {
+        printf("Failed to open file");
+        return 1;
+    }
+    file.seekg(0, std::ios::end); // go to the end
+    size_t length = file.tellg(); // report location (this is the length)
+    file.seekg(0, std::ios::beg);
+    
+    std::vector<char> buffer;
+    buffer.resize(length);
+    file.read((char*)buffer.data(), length);
+    buffer.push_back('\0');
+    buffer.push_back('\0');
+
+    // Erase all preprocessor directives
+    preprocess(buffer.data(), buffer.size());
+    std::ofstream f(fname + ".prep", std::ios::binary);
+    f.write(buffer.data(), buffer.size());
+    f.close();
+
+    // Tokenize
+    {
+        enum tokenizer_state {
+            tstate_default,
+            tstate_identifier,
+            tstate_integer,
+            tstate_numreal,
+            tstate_literal,
+            tstate_dot,
+            tstate_string_constant,
+            tstate_char_constant,
+            tstate_fwd_slash,
+            tstate_comment_line,
+            tstate_comment_multiline,
+            tstate_comment_multiline_end
+        };
+        tokenizer_state tstate = tstate_default;
+        token tok;
+        size_t cid_start = 0;
+        size_t cid = 0;
+        size_t line = 1, column = 0;
+        size_t column_start = 0; // starting column for current token
+        char c = buffer[cid];
+        char cc = buffer[cid + 1];
+        char ccc = buffer[cid + 2];
+        auto advance = [&c, &cc, &ccc, &buffer, &cid, &column](){
+            c = buffer[++cid];
+            cc = buffer[cid + 1];
+            ccc = buffer[cid + 2];
+            ++column;
+        };
+        auto submit_token = [&tok, &buffer, &cid, &cid_start, &column_start, &column, &line](token_type type){
+            tok.string = &buffer[cid_start];
+            tok.length = cid - cid_start;
+            tok.type = type;
+            tok.line = line;
+            tok.col = column_start;
+            if(type != tok_comment) tokens.push_back(tok);
+            cid_start = cid;
+
+            column_start = column;
+        };
+        while(c != '\0') {
+            switch(tstate) {
+            case tstate_default:
+                tok.string = &buffer[cid];
+                tok.length = 0;
+                cid_start = cid;
+                column_start = column;
+                if(c == '\\' && isnewline(cc)) {
+                    line++;
+                    column = 0;
+                    advance();
+                    advance();
+                } else if(isnewline(c)) {
+                    line++;
+                    column = 0;
+                    advance();
+                } else if(isalpha(c)) { tstate = tstate_identifier; }
+                else if(isnum(c)) { tstate = tstate_integer; }
+                else if(c == ';') { advance(); submit_token(tok_semicolon); }
+                else if(c == '{') { advance(); submit_token(tok_brace_l); }
+                else if(c == '}') { advance(); submit_token(tok_brace_r); }
+                else if(c == '[') { advance(); submit_token(tok_bracket_l); }
+                else if(c == ']') { advance(); submit_token(tok_bracket_r); }
+                else if(c == '(') { advance(); submit_token(tok_paren_l); }
+                else if(c == ')') { advance(); submit_token(tok_paren_r); }
+                else if(c == '#') { advance(); submit_token(tok_hash); }
+                else if(c == '\"') { tstate = tstate_string_constant; }
+                else if(c == '\'') { tstate = tstate_char_constant; }
+                else if(c == '=') {
+                    advance();
+                    if(c == '=') {  // ==
+                        advance();
+                        submit_token(tok_equals);
+                    } else {        // =
+                        submit_token(tok_assign);
+                    }
+                } else if(c == '+') { // +, ++, +=
+                    advance();
+                    if(c == '+') {
+                        advance();
+                        submit_token(tok_incr);
+                    } else if(c == '=') {
+                        advance();
+                        submit_token(tok_plus_assign);
+                    } else {
+                        submit_token(tok_plus);
+                    }
+                } else if(c == '-') { // -, --, -=, ->, ->*
+                    advance();
+                    if(c == '-') {
+                        advance();
+                        submit_token(tok_decr);
+                    } else if(c == '=') {
+                        advance();
+                        submit_token(tok_minus_assign);
+                    } else if(c == '>') {
+                        advance();
+                        if(c == '*') {
+                            advance();
+                            submit_token(tok_arrow_member);
+                        } else {
+                            submit_token(tok_arrow);
+                        }
+                    }  
+                } else if(c == '*') { // *, *=
+                    advance();
+                    if(c == '=') {
+                        advance();
+                        submit_token(tok_asterisk_assign);
+                    } else {
+                        submit_token(tok_asterisk);
+                    }
+                } else if(c == '/') {  // /, /=, //, /*
+                    tstate = tstate_fwd_slash; 
+                } else if(c == '%') { // %, %=
+                    advance();
+                    if(c == '=') {
+                        advance();
+                        submit_token(tok_percent_assign);
+                    } else {
+                        submit_token(tok_percent);
+                    }
+                } else if(c == '!') { // !, !=
+                    advance();
+                    if(c == '=') {
+                        advance();
+                        submit_token(tok_excl_assign);
+                    } else {
+                        submit_token(tok_excl);
+                    }
+                } else if(c == '<') { // <, <=, <=>, <<, <<=
+                    advance();
+                    if(c == '=') {
+                        advance();
+                        if(c == '>') {
+                            advance();
+                            submit_token(tok_three_way_comp);
+                        } else {
+                            submit_token(tok_less_assign);
+                        }
+                    } else if(c == '<') {
+                        advance();
+                        if(c == '=') {
+                            advance();
+                            submit_token(tok_shift_left_assign);
+                        } else {
+                            submit_token(tok_shift_left);
+                        }
+                    } else {
+                        submit_token(tok_less);
+                    }
+                } else if(c == '>') { // >, >=, >>, >>=
+                    advance();
+                    if(c == '=') {
+                        advance();
+                        submit_token(tok_more_assign);
+                    } else if(c == '>') {
+                        advance();
+                        if(c == '=') {
+                            advance();
+                            submit_token(tok_shift_right_assign);
+                        } else {
+                            submit_token(tok_shift_right);
+                        }
+                    } else {
+                        submit_token(tok_more);
+                    }
+                } else if(c == '&') { // &, &&, &=
+                    advance();
+                    if(c == '&') {
+                        advance();
+                        submit_token(tok_double_amp);
+                    } else if(c == '=') {
+                        advance();
+                        submit_token(tok_amp_assign);
+                    } else {
+                        submit_token(tok_amp);
+                    }
+                } else if(c == '|') { // |, ||, |=
+                    advance();
+                    if(c == '|') {
+                        advance();
+                        submit_token(tok_double_pipe);
+                    } else if(c == '='){
+                        advance();
+                        submit_token(tok_pipe_assign);
+                    } else {
+                        submit_token(tok_pipe);
+                    }
+                } else if(c == '~') { // ~
+                    advance();
+                    submit_token(tok_tilde);
+                } else if(c == '^') { // ^, ^=
+                    advance();
+                    if(c == '=') {
+                        advance();
+                        submit_token(tok_hat_assign);
+                    } else {
+                        submit_token(tok_hat);
+                    }
+                } else if(c == ',') { // ,
+                    advance();
+                    submit_token(tok_comma);
+                } else if(c == '?') { // ?
+                    advance();
+                    submit_token(tok_question);
+                } else if(c == ':') { // :, ::
+                    advance();
+                    if(c == ':') {
+                        advance();
+                        submit_token(tok_double_colon);
+                    } else {
+                        submit_token(tok_colon);
+                    }
+                } else if(c == '.') { tstate = tstate_dot; }
+                else if(c == '/') { tstate = tstate_fwd_slash; }
+                else advance();
+                break;
+            case tstate_fwd_slash:
+                advance();
+                if(c == '/') {
+                    tstate = tstate_comment_line;
+                } else if(c == '*') {
+                    tstate = tstate_comment_multiline;
+                } else if(c == '=') {
+                    advance();
+                    submit_token(tok_fwd_slash_assign);
+                    tstate = tstate_default;
+                } else {
+                    submit_token(tok_fwd_slash);
+                    tstate = tstate_default;
+                }
+                break;
+            case tstate_comment_line:
+                advance();
+                if(c == '\n') {
+                    submit_token(tok_comment);
+                    tstate = tstate_default;
+                }
+                break;
+            case tstate_comment_multiline:
+                advance();
+                if(c == '*') {
+                    advance();
+                    if(c == '/') {
+                        advance();
+                        submit_token(tok_comment);
+                        tstate = tstate_default;
+                    }
+                }
+                break;
+            case tstate_identifier:
+                advance();
+                if(!isalphanum(c)) {
+                    submit_token(tok_identifier);
+                    tstate = tstate_default;
+                }
+                break;
+            case tstate_integer:
+                advance();
+                if(isnum(c)) {
+                    continue;
+                } else if(isalpha(c)) {
+                    submit_token(tok_int_literal);
+                    tstate = tstate_literal;
+                } else if(c == '.') {
+                    tstate = tstate_numreal;
+                } else {
+                    submit_token(tok_int_literal);
+                    tstate = tstate_default;
+                }
+                break;
+            case tstate_numreal:
+                advance();
+                if(isnum(c)) {
+                    continue;
+                } else if(isalpha(c)) {
+                    submit_token(tok_float_literal);
+                    tstate = tstate_literal;
+                } else {
+                    submit_token(tok_float_literal);
+                    tstate = tstate_default;
+                }
+                break;
+            case tstate_dot:
+                advance();
+                if(isnum(c)) {
+                    tstate = tstate_numreal;
+                } else if(c == '*') {
+                    advance();
+                    submit_token(tok_dot_asterisk);
+                    tstate = tstate_default;
+                } else if(c == '.') {
+                    advance();
+                    if(c == '.') {
+                        advance();
+                        submit_token(tok_elipsis);
+                        tstate = tstate_default;
+                    } else {
+                        assert(false);
+                    }
+                } else {
+                    submit_token(tok_dot);
+                    tstate = tstate_default;
+                }
+                break;
+            case tstate_literal:
+                advance();
+                if(isalpha(c)) {
+                    continue;
+                } else {
+                    submit_token(tok_literal);
+                    tstate = tstate_default;
+                }
+                break;
+            case tstate_string_constant:
+                advance();
+                if(c != '\"' && !isnewline(c) && !iseof(c)) {
+                    continue;
+                } else {
+                    advance();
+                    submit_token(tok_string_constant);
+                    tstate = tstate_default;
+                }
+                break;
+            case tstate_char_constant:
+                advance();
+                if(c != '\'' && !isnewline(c) && !iseof(c)) {
+                    continue;
+                } else {
+                    advance();
+                    submit_token(tok_char_constant);
+                    tstate = tstate_default;
+                }
+                break;
+            };
+        }
+    }
+    
+    token tok;
+    tok.type = tok_eof;
+    tokens.push_back(tok);
+
+    // Refine tokens using known keywords
+    std::map<const char*, token_type> known_keyword_to_token = {
+        { "enum", tok_enum },
+        { "struct", tok_struct },
+        { "class", tok_class },
+        { "namespace", tok_namespace },
+
+        // Storage class specifiers
+        { "register", tok_register },
+        { "static", tok_static },
+        { "thread_local", tok_thread_local },
+        { "extern", tok_extern },
+        { "mutable", tok_mutable },
+
+        // Function specifiers
+        { "inline", tok_inline },
+        { "virtual", tok_virtual },
+        { "explicit", tok_explicit },
+
+        // Other
+        { "typedef", tok_typedef },
+        { "friend", tok_friend },
+        { "constexpr", tok_constexpr },
+
+        // Type specifiers
+        // cv-qualifiers
+        { "const", tok_const },
+        { "volatile", tok_volatile },
+
+    };
+    for(int i = 0; i < tokens.size(); ++i) {
+        auto& tok = tokens[i];
+        if(tok.type == tok_identifier) {
+            // TODO: add token 'subtype'
+            for(auto& kv : known_keyword_to_token) {
+                if(tok_name_match(tok, kv.first)) {
+                    tok.type = kv.second;
+                }
+            }
+        }
+    }
+
+    {
+        enum parse_state {
+            ps_fail,
+            ps_declaration,
+        };
+        parse_state pstate = ps_declaration;
+
+        token& tok = tokens.front();
+        size_t tid = 0;
+        size_t start_tid = 0;
+        std::string parse_error_text;
+        auto advance = [&tok, &tid](){
+            tok = tokens[++tid];
+        };
+
+        enum block_state {
+            block_state_decl,
+            block_state_scope
+        };
+        block_state state = block_state_decl;
+        enum block_type {
+            block_decl,
+            block_scope
+        };
+        struct block {
+            token* tokens;
+            size_t count;
+            block_type type;
+        };
+        std::vector<block> blocks;
+
+        static const int CV_CONST       = 0x1;
+        static const int CV_VOLATILE    = 0x2;
+        static const int STORAGE_REGISTER       = 0x01;
+        static const int STORAGE_STATIC         = 0x02;
+        static const int STORAGE_THREAD_LOCAL   = 0x03;
+        static const int STORAGE_EXTERN         = 0x04;
+        static const int STORAGE_MUTABLE        = 0x05;
+        struct declaration {
+            token* identifier = 0;
+            token* type_identifier = 0;
+            uint8_t cv = 0;
+            uint8_t storage = 0;
+        };
+        declaration decl;
+        std::vector<declaration> declarations;
+
+        while(tok.type != tok_eof) {
+            if(tok.type == tok_identifier) {
+                decl.type_identifier = decl.identifier;
+                decl.identifier = &tok;
+            } else if(tok.type == tok_const) {
+                decl.cv |= CV_CONST;
+            } else if(tok.type == tok_volatile) {
+                decl.cv |= CV_VOLATILE;
+            } else if(tok.type == tok_register) {
+                decl.storage |= STORAGE_REGISTER;
+            } else if(tok.type == tok_static) {
+                decl.storage |= STORAGE_STATIC;
+            } else if(tok.type == tok_thread_local) {
+                decl.storage |= STORAGE_THREAD_LOCAL;
+            } else if(tok.type == tok_extern) {
+                decl.storage |= STORAGE_EXTERN;
+            } else if(tok.type == tok_mutable) {
+                decl.storage |= STORAGE_MUTABLE;
+            } else if(tok.type == tok_semicolon) {
+                if(decl.type_identifier == 0 && decl.identifier) {
+                    decl.type_identifier = decl.identifier;
+                    decl.identifier = 0;
+                }
+                if(decl.identifier == 0) {
+                    //printf("error - incomplete declaration (missing identifier)");
+                }
+                declarations.push_back(decl);
+                decl = declaration();
+            } else {
+                // TODO: Failed to parse declaration, skip
+            }
+            advance();
+        }
+
+        for(auto& decl : declarations) {
+            if(decl.identifier) {
+                printf("%s\n", std::string(decl.identifier->string, decl.identifier->length).c_str());
+            }
+        }
+
+        for(auto& b : blocks) {
+            if(b.type == block_decl) {
+                for(size_t i = 0; i < b.count; ++i) {
+                    printf("%s ", std::string(b.tokens[i].string, b.tokens[i].length).c_str());
+                }
+                printf("\n");
+            } else if(b.type == block_scope) {
+                printf("{ scope-block }\n");
+            } else {
+                printf("(unknown)\n");
+            }
+        }
+    }
+    for(auto & t : tokens) {
+        if (tok_name_match(t, "KTCLASS")) {
+            printf("%s\t%i\n", std::string(t.string, t.length).c_str(), t.type);
+        } else if (tok_name_match(t, "KTPROP")) {
+            printf("%s\t%i\n", std::string(t.string, t.length).c_str(), t.type);
+        }
+        //printf("%s\t%i\n", std::string(t.string, t.length).c_str(), t.type);
+    }
+
+    /*
+    for(int i = 0; i < tokens.size(); ++i) {
+        printf("%s\n", std::string(tokens[i].string, tokens[i].length).c_str());
+    }*/
+    
+    return 0;
+}
+
+namespace Hello {
+    template<typename T>
+    class CTest {
+    public:
+    };
+
+    CTest<CTest<int>> poo;
+
+    int foobar() {
+        int a, b;
+        a >> b;
+        std::vector<CTest<int>> vec;
+
+        return 0;
+    }
+
+    float booba = 9.;
+    float foo = 3.14f;
+    float bar = .54;
+
+    const volatile const const const const volatile const class Peepo;
+
+    int long unsigned long shloop;
+
+    const volatile int unsigned static thread_local* [[pep, pip("lol", "lel", kek, 500, (uwu, 200))]] poop;
+}                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 

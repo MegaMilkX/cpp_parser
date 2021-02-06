@@ -1,0 +1,28 @@
+
+import components.kat
+
+component Team : int;
+component Position : vec3;
+component Velocity : vec3;
+component Model;
+
+entity Character {
+    int             team;
+    Model           model;
+    CollisionShape  collision_shape;
+    vec3            position;
+    vec3            velocity;
+};
+
+entity StaticModel {
+    Model;
+    CollisionMesh;
+};
+
+entity LightOmni {
+    mat4 transform;
+    float intensity;
+    float radius;
+    vec3 color;  
+};
+
