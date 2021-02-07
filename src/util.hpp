@@ -8,7 +8,6 @@ inline bool isspace(char c) {
     case ' ':
     case '\t':
     case '\r':
-    case '\n':
         return true;
     default:
         return false;

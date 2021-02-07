@@ -27,6 +27,7 @@ enum token_type {
     tok_string_constant,
     tok_char_constant,
     tok_hash,
+    tok_double_hash,
     
     tok_assign,
     tok_equals,
@@ -190,6 +191,14 @@ struct token {
         return std::string(string, length);
     }
 };
+
+inline bool tok_name_match(const token& tok, const char* name) {
+    size_t len = strlen(name);
+    if(tok.length != len) {
+        return false;
+    }
+    return strncmp(tok.string, name, len) == 0;
+}
 
 class token_cursor {
     token* tokens;

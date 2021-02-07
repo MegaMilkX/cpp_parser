@@ -2,6 +2,50 @@
 #include <stdint.h>
 #include <string>
 
+static const int \
+\
+\
+\
+\
+\
+kik;
+
+#define MY_MACRO static_assert(false)
+#define MERGE2(A, B) A ## _ ## B
+MERGE2(MY, MACRO);
+
+#define DEFINE_STRING(VAR, TEXT) static const char* VAR = #TEXT
+DEFINE_STRING(my_string, test
+ = "Hello \"World!\" <> @#@ 2" foo);
+
+#define MISTAKE          lol ##;                      
+
+#define MYMACRO int foo(void) { \
+    return 0;\
+}
+
+#define MYMACRO2( NAME , POOP , ...) class NAME {}
+
+MYMACRO2 (
+    ClassTest, 
+    (GOOP), 
+    ((WHATEVS, POOP))
+);
+MISTAKE
+#define FOO
+#define BAR
+
+#if defined FOO
+#endif
+
+#ifdef FOO
+#elif BAR
+#else
+#endif
+
+#pragma hello
+#pragma once
+
 template<int VALUE>
 class value_object {};
 
