@@ -46,9 +46,13 @@ inline std::vector<char> pp_string_from_tokens(const std::vector<token>& tokens)
                 t = tokens[i];
             }
             out.push_back(' ');
-            continue;
+            --i;
+        } else {
+            out.insert(out.end(), t.string, t.string + t.length);
         }
-        out.insert(out.end(), t.string, t.string + t.length);
+    }
+    if(!out.empty() && out.back() == ' ') {
+        out.pop_back(); 
     }
 
     return out;
@@ -97,7 +101,7 @@ inline std::vector<char> pp_string_constant_from_tokens(const std::vector<token>
 
 inline bool preprocess(const std::vector<token>& tokens, std::vector<char>& out_buf);
 
-inline bool process_replacement_list(const pp_macro& macro, std::vector<char>& out, const std::vector<std::vector<token>>& macro_args = std::vector<std::vector<token>>()) {
+inline bool process_replacement_list(const pp_macro& macro, std::vector<char>& out, const std::vector<std::vector<token>>& macro_args = std::vector<std::vector<token>>(), const std::vector<token>& va_args = std::vector<token>()) {
     if(macro.replacement_list.empty()) {
         return true;
     }
@@ -158,6 +162,10 @@ inline bool process_replacement_list(const pp_macro& macro, std::vector<char>& o
                 stringified_arg = pp_string_constant_from_tokens(macro_args[param_idx]);                
             }
             emit_buf(stringified_arg);
+            advance();
+        } else if(tok.get_string() == "__VA_ARGS__") {
+            std::vector<char> str = pp_string_from_tokens(va_args);
+            emit_buf(str);
             advance();
         } else if((param_idx = get_param_idx()) >= 0) {
             if(param_idx >= macro_args.size()) {
@@ -278,6 +286,7 @@ inline bool preprocess(const std::vector<token>& tokens, std::vector<char>& out_
                     if(it->second.has_parameter_list && is_tok(tok_paren_l)) {
                         advance(); eat_whitespace_and_newline();
                         std::vector<std::vector<token>> macro_args;
+                        std::vector<token> va_args;
                         std::vector<token> arg;
                         int open_paren_count = 1;
                         if(is_tok(tok_paren_r)) {
@@ -292,15 +301,25 @@ inline bool preprocess(const std::vector<token>& tokens, std::vector<char>& out_
                                 if(is_tok(tok_paren_r)) {
                                     open_paren_count--;
                                     if(open_paren_count == 0) {
-                                        macro_args.push_back(arg);
-                                        advance();
+                                        if(macro_args.size() < it->second.parameters.size()) {
+                                            macro_args.push_back(arg);
+                                            advance();
+                                        } else {
+                                            va_args = arg;
+                                            advance();
+                                        }
                                         break;
                                     }
                                 }
                                 if(open_paren_count == 1 && is_tok(tok_comma)) {
-                                    macro_args.push_back(arg);
-                                    arg.clear();
-                                    advance(); eat_whitespace_and_newline();
+                                    if(macro_args.size() < it->second.parameters.size()) {
+                                        macro_args.push_back(arg);
+                                        arg.clear();
+                                        advance(); eat_whitespace_and_newline();
+                                    } else {
+                                        arg.push_back(tok);
+                                        advance();
+                                    }
                                     continue;
                                 }
                                 if(is_tok(tok_paren_l)) {
@@ -320,7 +339,7 @@ inline bool preprocess(const std::vector<token>& tokens, std::vector<char>& out_
                         }
                         std::vector<char> replacement;
                         expansion_stack.push_back(it->second.name);
-                        if(!process_replacement_list(it->second, replacement, macro_args)) {
+                        if(!process_replacement_list(it->second, replacement, macro_args, va_args)) {
                             return false;
                         }
                         expansion_stack.pop_back();
@@ -397,12 +416,12 @@ inline bool preprocess(const std::vector<token>& tokens, std::vector<char>& out_
                         pp_error("expected an identifier, got '%s'", tok.get_string().c_str());
                         return false;
                     }
-                    def.parameters.push_back(tok);
                     if(is_tok(tok_elipsis)) {
                         advance(); eat_whitespace();
                         def.has_variadic_param = true;
                         break;
                     }
+                    def.parameters.push_back(tok);
                     advance(); eat_whitespace();
                     if(is_tok(tok_comma)) {
                         advance(); eat_whitespace();

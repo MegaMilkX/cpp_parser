@@ -2,13 +2,16 @@
 #include <stdint.h>
 #include <string>
 
-static const int \
-\
-\
-\
-\
-\
-kik;
+#define A_ B_
+#define B_ A_
+B_
+
+#define EMPTY(X)
+#define VARIADIC(...) (__VA_ARGS__)
+VARIADIC(a, b, asda, asdsa  ,asd   ssd   , asd          )
+
+#define MAC(A, B) 
+MAC(a, b, c , d e, e)
 
 #define MY_MACRO static_assert(false)
 #define MERGE2(A, B) A ## _ ## B
