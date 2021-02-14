@@ -179,6 +179,9 @@ enum token_type {
     tok_eof
 };
 
+struct token;
+inline bool tok_name_match(const token& tok, const char* name);
+
 struct token {
     token_type  type = tok_error;
     const char* string;
@@ -189,6 +192,33 @@ struct token {
 
     std::string get_string() const {
         return std::string(string, length);
+    }
+    int to_int() const {
+        assert(type == tok_int_literal);
+        return std::stoi(get_string());
+    }
+    float to_float() const {
+        assert(type == tok_float_literal);
+        // TODO Handle literals (f in 10.0f)
+        return std::stof(get_string());
+    }
+    char to_char() const {
+        assert(type == tok_char_constant);
+        return 0; // TODO
+    }
+    std::string to_string() const {
+        assert(type == tok_string_constant);
+        return std::string(string + 1, string + length - 1);
+    }
+    bool to_bool() const {
+        if(tok_name_match(*this, "true")) {
+            return true;
+        } else if(tok_name_match(*this, "false")) {
+            return false;
+        } else {
+            assert(false);
+            return false;
+        }
     }
 };
 

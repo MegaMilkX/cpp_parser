@@ -1277,6 +1277,7 @@ inline int try_unary_expression(node_cursor c) {
     r = try_new_expression(c);
     if(r) return r;
     r = try_delete_expression(c);*/
+    return 0;
 }
 inline int try_cast_expression(node_cursor c) {
     int adv = 0;

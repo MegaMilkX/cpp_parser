@@ -14,6 +14,10 @@
 
 #include "tokenize.hpp"
 
+#include "load_file.hpp"
+
+#include <windows.h>
+
 #define LOL <stdint.h>
 #define TEST(B) static const int A = int(B);
 #define TEST2 inline int foobar
@@ -44,53 +48,6 @@ void error(const char* text) {
     printf("error: %s\n", text);
 }
 
-// Load entire text file into a char buffer
-bool load_file(const char* fname, std::vector<char>& buffer) {
-    std::ifstream file(fname);
-    if (!file.is_open()) {
-        printf("Failed to open file\n");
-        return false;
-    }
-    file.seekg(0, std::ios::end); // go to the end
-    size_t length = file.tellg(); // report location (this is the length)
-    file.seekg(0, std::ios::beg);
-    
-    buffer.resize(length);
-    file.read((char*)buffer.data(), length);
-    buffer.push_back('\0');
-    buffer.push_back('\0');
-    return true;
-}
-
-bool load_file2(const char* fname, std::vector<char>& buffer) {
-    buffer.clear();
-    std::ifstream file(fname);
-    if(!file.is_open()) {
-        printf("Failed to open file %s\n", fname);
-        return false;
-    }
-    for(std::istreambuf_iterator<char> it(file), end; it != end; ++it) {
-        char c = *it;        
-        switch(c) {
-        case '\\': {
-            ++it;
-            if(it == end) {
-                buffer.push_back('\n');
-                break;
-            }
-            char next = *it;
-            if(next == '\n') {
-                break;
-            }
-            buffer.push_back('\\');
-        }
-        default:
-            buffer.push_back(c);
-        }
-    }
-    return true;
-}
-
 void dump_buffer(const std::vector<char>& buffer, const char* fname) {
     std::ofstream f(fname, std::ios::binary);
     f.write(buffer.data(), buffer.size());
@@ -118,15 +75,24 @@ int main(int argc, char** argv) {
     }
     dump_buffer(buffer, (fname + ".phase2").c_str());
 
-    //std::vector<char> buffer_preprocessed;
-    //remove_pp(buffer.data(), buffer.size(), buffer_preprocessed);
-    //dump_buffer(buffer_preprocessed, (fname + ".pp").c_str());
+    char buf[MAX_PATH];
+    memset(buf, 0, MAX_PATH);
+    char* fname_part = 0;
+    auto len = GetFullPathNameA(fname.c_str(), MAX_PATH, buf, &fname_part);
+    if(len == 0) {
+        assert(false);
+        return 1;
+    }
+    std::string full_fpath(buf, buf + len);
+    std::string full_path_no_name(buf, fname_part);
 
     tokenize(buffer, pp_tokens);
     std::vector<char> preprocessed_buffer;
-    preprocess(pp_tokens, preprocessed_buffer);
+    preprocess(pp_tokens, preprocessed_buffer, full_fpath);
     dump_buffer(preprocessed_buffer, (fname + ".pp").c_str());
-    return 0;
+    //return 0;
+
+    tokenize(preprocessed_buffer, tokens);
 
     // Refine tokens using known keywords
     std::map<const char*, token_type> known_keyword_to_token = {
@@ -299,7 +265,7 @@ int main(int argc, char** argv) {
                     }
                 }
             };
-            print_seq(root.get());
+            //print_seq(root.get());
         }
 
         {

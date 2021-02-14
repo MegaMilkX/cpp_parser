@@ -342,7 +342,14 @@ bool tokenize(const std::vector<char>& buffer, std::vector<token>& tokens) {
             break;
         case tstate_string_constant:
             advance();
-            if(c != '\"' && !isnewline(c) && !iseof(c)) {
+            if(c == '\\') {
+                advance();
+                if(c == '"') {
+                    advance();
+                    continue;
+                }
+                continue;
+            } else if(c != '\"' && !isnewline(c) && !iseof(c)) {
                 continue;
             } else {
                 advance();
@@ -368,6 +375,7 @@ bool tokenize(const std::vector<char>& buffer, std::vector<token>& tokens) {
         tok.type = tok_eof;
         tokens.push_back(tok);
     }
+
     return true;
 }
 

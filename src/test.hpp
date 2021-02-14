@@ -2,16 +2,104 @@
 #include <stdint.h>
 #include <string>
 
-#define A_ B_
-#define B_ A_
-B_
+#include "test_include.hpp"
+
+#if defined TEST_INCLUDED
+static const int TEST_INCL;
+#endif
+
+#define JELLO
+
+#if !defined (JELLO)
+static const int JELLO_0;
+#endif
+
+#if defined (JELLO)
+static const int JELLO_1;
+#endif
+
+#if defined JELLO
+static const int JELLO_2;
+#endif
+#if !defined JELLO
+static const int JELLO_3;
+#endif
+
+#if -(10 + 20)
+#endif
+
+#if 10 + 3
+#endif
+
+#if 10 + 5 * 10
+#endif
+#if (10 + 5) * 10
+#endif
+#if 10 ? (66 + 600) : (666 / 6)
+#elif true != 0
+#endif
+
+#if 0 / 1 * 10 << 19 % (100 + 10) < 100 + 500 * 32 + (10 & 8) && true
+static const int ASS;
+#endif
+
+#ifdef AAA
+#ifdef BBB
+static const int POO1;
+#else
+static const int BOO1;
+#endif
+#else
+static const int ZOO1;
+#endif
+
+#define AAA
+#ifdef AAA
+#ifdef BBB
+static const int POO2;
+#else
+static const int BOO2;
+#endif
+#else
+static const int ZOO2;
+#endif
+#undef AAA
+
+#define BBB
+#ifdef AAA
+#ifdef BBB
+static const int POO3;
+#else
+static const int BOO3;
+#endif
+#else
+static const int ZOO3;
+#endif
+#undef BBB
+
+#define AAA
+#define BBB
+#ifdef AAA
+#ifdef BBB
+static const int POO4;
+#else
+static const int BOO4;
+#endif
+#else
+static const int ZOO4;
+#endif
+#undef AAA
+#undef BBB
 
 #define EMPTY(X)
-#define VARIADIC(...) (__VA_ARGS__)
-VARIADIC(a, b, asda, asdsa  ,asd   ssd   , asd          )
+#define VARIADIC(A,B, ...) static const char* A = (#__VA_ARGS__)
+VARIADIC(a, b, asda, "asdsa"  ,asd   ssd   , asd          );
 
 #define MAC(A, B) 
 MAC(a, b, c , d e, e)
+
+EMPTY(A);
+//EMPTY
 
 #define MY_MACRO static_assert(false)
 #define MERGE2(A, B) A ## _ ## B
@@ -37,14 +125,6 @@ MYMACRO2 (
 MISTAKE
 #define FOO
 #define BAR
-
-#if defined FOO
-#endif
-
-#ifdef FOO
-#elif BAR
-#else
-#endif
 
 #pragma hello
 #pragma once
