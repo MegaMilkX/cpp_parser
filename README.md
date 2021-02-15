@@ -13,3 +13,9 @@ This is a work in progress. Not yet usable.
 # Limitations
 - Only ASCII source
 - Trigraphs are not supported
+
+# Usage
+```
+cppi::context ctx;
+ctx.parse("my_souce_file.hpp");
+```
