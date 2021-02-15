@@ -1,29 +1,15 @@
-#ifndef LOAD_FILE_HPP
-#define LOAD_FILE_HPP
+#ifndef CPPI_FILE_UTIL_HPP
+#define CPPI_FILE_UTIL_HPP
 
-#include <vector>
 #include <fstream>
-#include <stdio.h>
+#include <vector>
 
-// Load entire text file into a char buffer
+#include "token.hpp"
+
+
+namespace cppi {
+
 inline bool load_file(const char* fname, std::vector<char>& buffer) {
-    std::ifstream file(fname);
-    if (!file.is_open()) {
-        printf("Failed to open file\n");
-        return false;
-    }
-    file.seekg(0, std::ios::end); // go to the end
-    size_t length = file.tellg(); // report location (this is the length)
-    file.seekg(0, std::ios::beg);
-    
-    buffer.resize(length);
-    file.read((char*)buffer.data(), length);
-    buffer.push_back('\0');
-    buffer.push_back('\0');
-    return true;
-}
-
-inline bool load_file2(const char* fname, std::vector<char>& buffer) {
     buffer.clear();
     std::ifstream file(fname);
     if(!file.is_open()) {
@@ -53,5 +39,20 @@ inline bool load_file2(const char* fname, std::vector<char>& buffer) {
     }
     return true;
 }
+inline void dump_buffer(const std::vector<char>& buffer, const char* fname) {
+    std::ofstream f(fname, std::ios::binary);
+    f.write(buffer.data(), buffer.size());
+    f.close();
+}
+inline void dump_tokens(const std::vector<token>& tokens, const char* fname) {
+    std::ofstream f(fname, std::ios::binary);
+    for(auto& t : tokens) {
+        f.write(t.string, t.length);
+    }
+    f.close();
+}
+
+} // cppi
+
 
 #endif

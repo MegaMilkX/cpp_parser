@@ -7,9 +7,12 @@
 namespace cppi {
 
 class context {
+    pp_context pp_ctx;
 public:
-    void parse(const char* fname);
-    void parse(const char* buffer, size_t length);
+    pp_context& get_preprocessor_context() { return pp_ctx; }
+
+    bool parse(const char* fname);
+    bool parse(const char* buffer, size_t length, const char* full_file_name_hint = ".");
 };
 
 } // cppi

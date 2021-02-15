@@ -1,16 +1,12 @@
-#ifndef NODE_HPP
-#define NODE_HPP
+#ifndef CPPI_PARSE_NODE_HPP
+#define CPPI_PARSE_NODE_HPP
 
 #include <vector>
 #include <memory>
 #include "token.hpp"
 
-#define REQUIRE(func) r = func(c); \
-    c.advance(r); adv += r; \
-    if(!r) { return 0; }
-#define OPT(func) r = func(c); \
-    c.advance(r); adv += r;
 
+namespace cppi {
 
 enum node_type {
     node_token,
@@ -1773,6 +1769,8 @@ inline int try_class_specifier(node_cursor c) {
     printf("\n");
     return adv;
 }
+
+} // cppi
 
 
 #endif

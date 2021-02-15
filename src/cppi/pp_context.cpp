@@ -1,55 +1,30 @@
-#ifndef PREPROCESS_HPP
-#define PREPROCESS_HPP
+#include "pp_context.hpp"
 
-#include <algorithm>
 #include <cctype>
-#include <vector>
-#include <stdio.h>
 #include "tokenize.hpp"
-#include "util.hpp"
-#include "ast.hpp"
-#include "load_file.hpp"
+#include "pp_constant_expression.hpp"
+#include "file_util.hpp"
+#include "pp_token_cursor.hpp"
+#include "pp_ast.hpp"
 
-struct pp_line {
-    char* buf;
-    size_t len;
-};
 
-inline void print_tok(const token& tok) {
+namespace cppi {
+
+void print_tok(const token& tok) {
     printf("%s", tok.get_string().c_str());
 }
 
-static const auto pp_error = [](const char* format, ...){
+void pp_context::pp_error(const char* format, ...) {
     va_list _ArgList;
     __crt_va_start(_ArgList, format);
     printf((std::string("PP ERROR: ") + format).c_str(), _ArgList);
     __crt_va_end(_ArgList);
-};
+}
 
-struct pp_macro {
-    std::string name;
-    bool has_parameter_list = false;
-    bool has_variadic_param = false;
-    std::vector<token> parameters;
-    std::vector<token> replacement_list;
-};
-std::map<std::string, pp_macro> macros;
-std::vector<std::string> expansion_stack; // to track circular expansion
-
-enum CONDITION_TYPE {
-    COND_IF,
-    COND_ELIF,
-    COND_ELSE
-};
-struct pp_cond_state {
-    CONDITION_TYPE  type;
-    bool            group_enabled;
-    bool            one_condition_already_satisfied;
-};
-std::vector<pp_cond_state> conditional_stack; // #ifdef, etc. 0 - false, otherwise - true
-bool pp_token_group_enabled = true;
-
-inline std::string pp_dir_name_from_path(const std::string& path) {
+std::string pp_dir_name_from_path(const std::string& path) {
+    if(path == ".") {
+        return ".";
+    }
     std::string _path = path;
     std::replace_if(_path.begin(), _path.end(), [](char c)->bool{ return c == '/'; }, '\\');
     std::transform(_path.begin(), _path.end(), _path.begin(), [](char c)->char{
@@ -60,33 +35,57 @@ inline std::string pp_dir_name_from_path(const std::string& path) {
     return std::string(_path.data(), _path.data() + last_slash + 1);
 }
 
-inline std::vector<char> pp_string_from_tokens(const std::vector<token>& tokens) {
-    std::vector<char> out;
-
-    for(int i = 0; i < tokens.size(); ++i) {
-        auto t = tokens[i];
-        if(t.type == tok_whitespace || t.type == tok_newline) {
-            while(t.type == tok_whitespace || t.type == tok_newline) {
-                ++i;
-                if(i == tokens.size() - 1) {
-                    break;
-                }
-                t = tokens[i];
-            }
-            out.push_back(' ');
-            --i;
-        } else {
-            out.insert(out.end(), t.string, t.string + t.length);
+bool pp_context::is_macro_already_expanding(const std::string& name) {
+    for(auto& e : expansion_stack) {
+        if(name == e) {
+            return true;
         }
     }
-    if(!out.empty() && out.back() == ' ') {
-        out.pop_back(); 
-    }
-
-    return out;
+    return false;
 }
 
-inline std::vector<char> pp_string_constant_from_tokens(const std::vector<token>& tokens) {
+bool pp_context::pp_eval_constant_expression(const std::vector<token>& tokens, int& out) {
+    std::vector<char> preprocessed_expr;
+    if(!preprocess(tokens, preprocessed_expr, "", true)) {
+        return false;
+    }
+    std::vector<token> preprocessed_tokens;
+    tokenize(preprocessed_expr, preprocessed_tokens);
+    
+    std::vector<token> tokens_no_whitespace;
+    for(int i = 0; i < preprocessed_tokens.size(); ++i) {
+        if(preprocessed_tokens[i].type == tok_whitespace || preprocessed_tokens[i].type == tok_newline) {
+            continue;
+        }
+        tokens_no_whitespace.push_back(preprocessed_tokens[i]);
+    }
+
+    pp_token_cursor cur(tokens_no_whitespace);
+    
+    ast_node node;
+    int r = pp_try_constant_expression(cur, node);
+    for(int i = 0; i < r; ++i) {
+        printf("%s ", tokens_no_whitespace[i].get_string().c_str());
+    }
+    printf("\n");
+    printf("result: ");
+    node.eval();
+    if(node.eval_type == ast_lit_int) { printf("%i", node.as_int); }
+    else if(node.eval_type == ast_lit_char) { printf("%c", node.as_char); }
+    else if(node.eval_type == ast_lit_float) { printf("%f", node.as_float); }
+    else if(node.eval_type == ast_lit_bool) { node.as_bool ? printf("true") : printf("false"); }
+    else { assert(false); }
+    printf("\n");
+
+    if(node.eval_type == ast_lit_int) { out = node.as_int; }
+    else if(node.eval_type == ast_lit_char) { out = node.as_char; }
+    else if(node.eval_type == ast_lit_float) { out = node.as_float; }
+    else if(node.eval_type == ast_lit_bool) { out = node.as_bool; }
+    else { return false; }
+    return true;
+}
+
+std::vector<char> pp_context::pp_string_constant_from_tokens(const std::vector<token>& tokens) {
     // TODO: Unfinished, check standard
     std::vector<char> out;
     
@@ -130,14 +129,33 @@ inline std::vector<char> pp_string_constant_from_tokens(const std::vector<token>
     return out;
 }
 
-inline bool preprocess(
-    const std::vector<token>& tokens, 
-    std::vector<char>& out_buf,
-    const std::string& full_fpath = "", 
-    bool constant_expression = false, 
-    bool include_line = false);
+std::vector<char> pp_context::pp_string_from_tokens(const std::vector<token>& tokens) {
+    std::vector<char> out;
 
-inline bool process_replacement_list(const pp_macro& macro, std::vector<char>& out, const std::vector<std::vector<token>>& macro_args = std::vector<std::vector<token>>(), const std::vector<token>& va_args = std::vector<token>()) {
+    for(int i = 0; i < tokens.size(); ++i) {
+        auto t = tokens[i];
+        if(t.type == tok_whitespace || t.type == tok_newline) {
+            while(t.type == tok_whitespace || t.type == tok_newline) {
+                ++i;
+                if(i == tokens.size() - 1) {
+                    break;
+                }
+                t = tokens[i];
+            }
+            out.push_back(' ');
+            --i;
+        } else {
+            out.insert(out.end(), t.string, t.string + t.length);
+        }
+    }
+    if(!out.empty() && out.back() == ' ') {
+        out.pop_back(); 
+    }
+
+    return out;
+}
+
+bool pp_context::process_replacement_list(const pp_macro& macro, std::vector<char>& out, const std::vector<std::vector<token>>& macro_args, const std::vector<token>& va_args) {
     if(macro.replacement_list.empty()) {
         return true;
     }
@@ -248,540 +266,17 @@ inline bool process_replacement_list(const pp_macro& macro, std::vector<char>& o
     return true;
 }
 
-class pp_token_cursor {
-    const token* tokens;
-    const token* tok;
-    size_t count;
-    size_t cur;
-public:
-    pp_token_cursor(const std::vector<token>& tokens) {
-        this->tokens = tokens.data();
-        count = tokens.size();
-        cur = 0;
-        tok = &tokens[cur];
-    }
-    void advance(int i = 1) {
-        cur += i;
-        if(cur >= count) {
-            tok = 0;
-        } else {
-            tok = &tokens[cur];
-        }
-    }
-    bool is_tok(token_type type) {
-        if(!tok) {
-            if(type == tok_eof) {
-                return true;
-            } else {
-                return false;
-            }
-        }
-        return tok->type == type;
-    }
-    bool is_identifier(const std::string& comp) {
-        if(!is_tok(tok_identifier)) {
-            return false;
-        }
-        return tok_name_match(*tok, comp.c_str());
-    }
-    const token* get_tok() const {
-        return tok;
-    }
-};
-
-
-inline int pp_try_integer_literal(pp_token_cursor& cur) {
-    if(cur.is_tok(tok_int_literal)) {
-        return 1;
-    }
-    return 0;
-}
-inline int pp_try_character_literal(pp_token_cursor& cur) {
-    if(cur.is_tok(tok_char_constant)) {
-        return 1;
-    }
-    return 0;
-}
-inline int pp_try_floating_literal(pp_token_cursor& cur) {
-    if(cur.is_tok(tok_float_literal)) {
-        return 1;
-    }
-    return 0;
-}
-inline int pp_try_string_literal(pp_token_cursor& cur) {
-    if(cur.is_tok(tok_string_constant)) {
-        return 1;
-    }
-    return 0;
-}
-inline int pp_try_boolean_literal(pp_token_cursor& cur) {
-    if(cur.is_identifier("true")) {
-        return 1;
-    } else if(cur.is_identifier("false")) {
-        return 1;
-    }
-    return 0;
-}
-inline int pp_try_pointer_literal(pp_token_cursor& cur) {
-    if(cur.is_identifier("nullptr")) {
-        return 1;
-    }
-    return 0;
-}
-inline int pp_try_user_defined_literal(pp_token_cursor& cur) {
-    return 0;
-}
-inline int pp_try_literal(pp_token_cursor cur, ast_node& node) {
-    int r = pp_try_integer_literal(cur);
-    if(r) {
-        node.type = ast_lit_int;
-        node.eval_type = ast_lit_int;
-        node.as_int = cur.get_tok()->to_int();
-        return r;
-    }
-    r = pp_try_character_literal(cur);
-    if(r) {
-        node.type = ast_lit_char;
-        node.eval_type = ast_lit_char;
-        node.as_char = cur.get_tok()->to_char();
-        return r;
-    }
-    r = pp_try_floating_literal(cur);
-    if(r) {
-        node.type = ast_lit_float;
-        node.eval_type = ast_lit_float;
-        node.as_float = cur.get_tok()->to_float();
-        return r;
-    }
-    r = pp_try_string_literal(cur);
-    if(r) {
-        node.type = ast_lit_string;
-        node.eval_type = ast_lit_string;
-        // TODO cur.get_tok()->to_string() ?
-        return r;
-    }
-    r = pp_try_boolean_literal(cur);
-    if(r) {
-        node.type = ast_lit_bool;
-        node.eval_type = ast_lit_bool;
-        node.as_bool = cur.get_tok()->to_bool();
-        return r;
-    }
-    r = pp_try_pointer_literal(cur);
-    if(r) {
-        node.type = ast_lit_ptr;
-        node.eval_type = ast_lit_ptr;
-        node.as_int = 0;
-        return r;
-    }
-    r = pp_try_user_defined_literal(cur);
-    node.type = ast_unk; // TODO ?
-    return r;
-}
-inline int pp_try_constant_expression(pp_token_cursor cur, ast_node& node);
-inline int pp_try_primary_expression(pp_token_cursor cur, ast_node& node) {
-    int r = pp_try_literal(cur, node);
-    if(r) {
-        return r;
-    }
-    int adv = 0;
-    if(cur.is_tok(tok_paren_l)) {
-        cur.advance(); adv++;
-        r = pp_try_constant_expression(cur, node);
-        cur.advance(r); adv += r;
-        if(!cur.is_tok(tok_paren_r)) {
-            return 0;
-        }
-        cur.advance(); adv++;
-        return adv;
-    }
-}
-
-inline int pp_try_unary_expression(pp_token_cursor cur, ast_node& node) {
-    int adv = 0;
-    int r = pp_try_primary_expression(cur, node);
-    if(r) return r;
-
-    if(cur.is_tok(tok_incr)) {
-        // TODO: err
-        return 0;
-    } else if(cur.is_tok(tok_decr)) {
-        // TODO: err
-        return 0;
-    } else if(cur.is_tok(tok_asterisk)) {
-        // TODO: err
-        return 0;
-    } else if(cur.is_tok(tok_amp)) {
-        // TODO: err
-        return 0;
-    } else if(cur.is_tok(tok_plus)) {
-        node.type = ast_unary_plus;
-    } else if(cur.is_tok(tok_minus)) {
-        node.type = ast_unary_minus;
-    } else if(cur.is_tok(tok_excl)) {
-        node.type = ast_unary_logic_not;
-    } else if(cur.is_tok(tok_tilde)) {
-        node.type = ast_unary_not;
-    } else {
-        return 0;
-    }
-    cur.advance(); adv++;
-    ast_node operand;
-    r = pp_try_unary_expression(cur, operand);
-    cur.advance(r); adv += r;
-    if(!r) {
-        return 0;
-    }
-    node.set_right(operand);
-    return adv;
-}
-
-inline int pp_try_multiplicative_expression(pp_token_cursor cur, ast_node& node) {
-    int adv = 0;
-    ast_node node_a;
-    int r = pp_try_unary_expression(cur, node_a);
-    cur.advance(r); adv += r;
-    if(!r) return 0;
-    if(cur.is_tok(tok_asterisk)) {
-        cur.advance(); adv++;
-        node.type = ast_mul;
-    } else if(cur.is_tok(tok_fwd_slash)) {
-        cur.advance(); adv++;
-        node.type = ast_div;
-    } else if(cur.is_tok(tok_percent)) {
-        cur.advance(); adv++;
-        node.type = ast_div_rem;
-    } else {
-        node = node_a;
-        return adv;
-    }
-    ast_node node_b;
-    r = pp_try_multiplicative_expression(cur, node_b);
-    cur.advance(r); adv += r;
-    if(!r) return 0;
-
-    node.set_left(node_a);
-    node.set_right(node_b);
-
-    return adv;
-}
-inline int pp_try_additive_expression(pp_token_cursor cur, ast_node& node) {
-    int adv = 0;
-    ast_node node_a;
-    int r = pp_try_multiplicative_expression(cur, node_a);
-    cur.advance(r); adv += r;
-    if(!r) return 0;
-    if(cur.is_tok(tok_plus)) {
-        cur.advance(); adv++;
-        node.type = ast_plus;
-    } else if(cur.is_tok(tok_minus)) {
-        cur.advance(); adv++;
-        node.type = ast_minus;
-    } else {
-        node = node_a;
-        return adv;
-    }
-    ast_node node_b;
-    r = pp_try_additive_expression(cur, node_b);
-    cur.advance(r); adv += r;
-    if(!r) return 0;
-
-    node.set_left(node_a);
-    node.set_right(node_b);
-
-    return adv;
-}
-inline int pp_try_shift_expession(pp_token_cursor cur, ast_node& node) {
-    int adv = 0;
-    ast_node node_a;
-    int r = pp_try_additive_expression(cur, node_a);
-    cur.advance(r); adv += r;
-    if(cur.is_tok(tok_shift_left)) {
-        cur.advance(); adv++;
-        node.type = ast_shift_left;
-    } else if(cur.is_tok(tok_shift_right)) {
-        cur.advance(); adv++;
-        node.type = ast_shift_right;
-    } else {
-        node = node_a;
-        return adv;
-    }
-    ast_node node_b;
-    r = pp_try_shift_expession(cur, node_b);
-    cur.advance(r); adv += r;
-    if(!r) return 0;
-
-    node.set_left(node_a);
-    node.set_right(node_b);
-
-    return adv;
-}
-inline int pp_try_relational_expression(pp_token_cursor cur, ast_node& node) {
-    int adv = 0;
-    ast_node node_a;
-    int r = pp_try_shift_expession(cur, node_a);
-    cur.advance(r); adv += r;
-    if(cur.is_tok(tok_less)) {
-        cur.advance(); adv++;
-        node.type = ast_less;
-    } else if(cur.is_tok(tok_more)) {
-        cur.advance(); adv++;
-        node.type = ast_more;
-    } else if(cur.is_tok(tok_less_assign)) {
-        cur.advance(); adv++;
-        node.type = ast_less_eq;
-    } else if(cur.is_tok(tok_more_assign)) {
-        cur.advance(); adv++;
-        node.type = ast_more_eq;
-    } else {
-        node = node_a;
-        return adv;
-    }
-    ast_node node_b;
-    r = pp_try_relational_expression(cur, node_b);
-    cur.advance(r); adv += r;
-    if(!r) return 0;
-
-    node.set_left(node_a);
-    node.set_right(node_b);
-
-    return adv;
-}
-inline int pp_try_equality_expression(pp_token_cursor cur, ast_node& node) {
-    int adv = 0;
-    ast_node node_a;
-    int r = pp_try_relational_expression(cur, node_a);
-    cur.advance(r); adv += r;
-    if(cur.is_tok(tok_equals)) {
-        cur.advance(); adv++;
-        node.type = ast_equal;
-    } else if(cur.is_tok(tok_excl_assign)) {
-        cur.advance(); adv++;
-        node.type = ast_not_equal;
-    } else {
-        node = node_a;
-        return adv;
-    }
-    ast_node node_b;
-    r = pp_try_equality_expression(cur, node_b);
-    cur.advance(r); adv += r;
-    if(!r) return 0;
-
-    node.set_left(node_a);
-    node.set_right(node_b);
-
-    return adv;
-}
-inline int pp_try_and_expression(pp_token_cursor cur, ast_node& node) {
-    int adv = 0;
-    ast_node node_a;
-    int r = pp_try_equality_expression(cur, node_a);
-    cur.advance(r); adv += r;
-    if(cur.is_tok(tok_amp)) {
-        cur.advance(); adv++;
-    } else {
-        node = node_a;
-        return adv;
-    }
-    ast_node node_b;
-    r = pp_try_and_expression(cur, node_b);
-    cur.advance(r); adv += r;
-    if(!r) return 0;
-
-    node.type = ast_and;
-    node.set_left(node_a);
-    node.set_right(node_b);
-
-    return adv;
-}
-inline int pp_try_exclusive_or_expression(pp_token_cursor cur, ast_node& node) {
-    int adv = 0;
-    ast_node node_a;
-    int r = pp_try_and_expression(cur, node_a);
-    cur.advance(r); adv += r;
-    if(cur.is_tok(tok_hat)) {
-        cur.advance(); adv++;
-    } else {
-        node = node_a;
-        return adv;
-    }
-    ast_node node_b;
-    r = pp_try_exclusive_or_expression(cur, node_b);
-    cur.advance(r); adv += r;
-    if(!r) return 0;
-
-    node.type = ast_excl_or;
-    node.set_left(node_a);
-    node.set_right(node_b);
-
-    return adv;
-}
-inline int pp_try_inclusive_or_expression(pp_token_cursor cur, ast_node& node) {
-    int adv = 0;
-    ast_node node_a;
-    int r = pp_try_exclusive_or_expression(cur, node_a);
-    cur.advance(r); adv += r;
-    if(cur.is_tok(tok_pipe)) {
-        cur.advance(); adv++;
-    } else {
-        node = node_a;
-        return adv;
-    }
-    ast_node node_b;
-    r = pp_try_inclusive_or_expression(cur, node_b);
-    cur.advance(r); adv += r;
-    if(!r) return 0;
-
-    node.type = ast_or;
-    node.set_left(node_a);
-    node.set_right(node_b);
-
-    return adv;
-}
-inline int pp_try_logical_and_expression(pp_token_cursor cur, ast_node& node) {
-    int adv = 0;
-    ast_node node_a;
-    int r = pp_try_inclusive_or_expression(cur, node_a);
-    cur.advance(r); adv += r;
-    if(cur.is_tok(tok_double_amp)) {
-        cur.advance(); adv++;
-    } else {
-        node = node_a;
-        return adv;
-    }
-    ast_node node_b;
-    r = pp_try_logical_and_expression(cur, node_b);
-    cur.advance(r); adv += r;
-    if(!r) return 0;
-
-    node.type = ast_logic_and;
-    node.set_left(node_a);
-    node.set_right(node_b);
-
-    return adv;
-}
-inline int pp_try_logical_or_expression(pp_token_cursor cur, ast_node& node) {
-    int adv = 0;
-    ast_node node_a;
-    int r = pp_try_logical_and_expression(cur, node_a);
-    cur.advance(r); adv+=r;
-    if(cur.is_tok(tok_double_pipe)) {
-        cur.advance(); adv++;
-    } else {
-        node = node_a;
-        return adv;
-    }
-    ast_node node_b;
-    r = pp_try_logical_or_expression(cur, node_b);
-    cur.advance(r); adv += r;
-    if(!r) return 0;
-
-    node.type = ast_logic_or;
-    node.set_left(node_a);
-    node.set_right(node_b);
-
-    return adv;
-}
-inline int pp_try_conditional_expression(pp_token_cursor cur, ast_node& node) {
-    int adv = 0;
-    ast_node node_a;
-    int r = pp_try_logical_or_expression(cur, node_a);
-    cur.advance(r); adv += r;
-    if(cur.is_tok(tok_question)) {
-        cur.advance(); adv++;
-    } else {
-        node = node_a;
-        return adv;
-    }
-
-    ast_node node_b;
-    ast_node node_b_a;
-    r = pp_try_constant_expression(cur, node_b_a); // TODO 'expression', not 'constant-expression'
-    cur.advance(r); adv += r;
-    if(!r) return 0;
-    if(!cur.is_tok(tok_colon)) {
-        return 0;
-    }
-    cur.advance(); adv++;
-    
-    ast_node node_b_b;
-    r = pp_try_conditional_expression(cur, node_b_b); // TODO 'assignment-expression', not 'conditional-expression'
-    cur.advance(r); adv += r;
-    if(!r) return 0;
-
-    node_b.type = ast_conditional_options;
-    node_b.set_left(node_b_a);
-    node_b.set_right(node_b_b);
-
-    node.type = ast_conditional;
-    node.set_left(node_a);
-    node.set_right(node_b);
-
-    return adv;
-}
-
-inline int pp_try_constant_expression(pp_token_cursor cur, ast_node& node = ast_node()) {
-    int r = pp_try_conditional_expression(cur, node);
-    return r;   
-}
-
-inline bool pp_eval_constant_expression(const std::vector<token>& tokens, int& out) {
-    std::vector<char> preprocessed_expr;
-    if(!preprocess(tokens, preprocessed_expr, "", true)) {
-        return false;
-    }
-    std::vector<token> preprocessed_tokens;
-    tokenize(preprocessed_expr, preprocessed_tokens);
-    
-    std::vector<token> tokens_no_whitespace;
-    for(int i = 0; i < preprocessed_tokens.size(); ++i) {
-        if(preprocessed_tokens[i].type == tok_whitespace || preprocessed_tokens[i].type == tok_newline) {
-            continue;
-        }
-        tokens_no_whitespace.push_back(preprocessed_tokens[i]);
-    }
-
-    pp_token_cursor cur(tokens_no_whitespace);
-    
-    ast_node node;
-    int r = pp_try_constant_expression(cur, node);
-    for(int i = 0; i < r; ++i) {
-        printf("%s ", tokens_no_whitespace[i].get_string().c_str());
-    }
-    printf("\n");
-    printf("result: ");
-    node.eval();
-    if(node.eval_type == ast_lit_int) { printf("%i", node.as_int); }
-    else if(node.eval_type == ast_lit_char) { printf("%c", node.as_char); }
-    else if(node.eval_type == ast_lit_float) { printf("%f", node.as_float); }
-    else if(node.eval_type == ast_lit_bool) { node.as_bool ? printf("true") : printf("false"); }
-    else { assert(false); }
-    printf("\n");
-
-    if(node.eval_type == ast_lit_int) { out = node.as_int; }
-    else if(node.eval_type == ast_lit_char) { out = node.as_char; }
-    else if(node.eval_type == ast_lit_float) { out = node.as_float; }
-    else if(node.eval_type == ast_lit_bool) { out = node.as_bool; }
-    else { return false; }
-    return true;
-}
-
-inline bool is_macro_already_expanding(const std::string& name) {
-    for(auto& e : expansion_stack) {
-        if(name == e) {
-            return true;
-        }
-    }
-    return false;
-}
-
-inline bool preprocess(
+bool pp_context::preprocess(
     const std::vector<token>& tokens, 
     std::vector<char>& out_buf,
     const std::string& full_fpath, 
     bool constant_expression, 
     bool include_line
 ) {
+    std::string full_file_path = full_fpath;
+    if(full_file_path.empty()) {
+        full_file_path = ".";
+    }
     bool ignore_directives = constant_expression || include_line;
 
     token tok = tokens[0];
@@ -802,7 +297,7 @@ inline bool preprocess(
         if(cur >= tokens.size()) { tok.type = tok_eof; }
         else { tok = tokens[cur]; }
     };
-    auto emit_token_and_advance = [&advance, &out_buf, &tokens, &tok, &cur](){
+    auto emit_token_and_advance = [this, &advance, &out_buf, &tokens, &tok, &cur](){
         if(pp_token_group_enabled) {
             out_buf.insert(out_buf.end(), tok.string, tok.string + tok.length);
         }
@@ -836,7 +331,7 @@ inline bool preprocess(
         }
         return count;
     };
-    auto is_group_enabled = []()->bool{
+    auto is_group_enabled = [this]()->bool{
         if(conditional_stack.empty()) {
             return true;
         }
@@ -848,7 +343,7 @@ inline bool preprocess(
         }
         return conditional_stack.back().group_enabled && parent_state;
     };
-    auto is_parent_group_enabled = []()->bool{
+    auto is_parent_group_enabled = [this]()->bool{
         if(conditional_stack.empty()) {
             return true;
         }
@@ -1116,11 +611,11 @@ inline bool preprocess(
             }
 
             if(is_quotes) {
-                std::string dir = pp_dir_name_from_path(full_fpath);
+                std::string dir = pp_dir_name_from_path(full_file_path);
                 std::string new_fname = dir + "\\" + fname;
                 
                 std::vector<char> fbuf;
-                if(!load_file2(new_fname.c_str(), fbuf)) {
+                if(!load_file(new_fname.c_str(), fbuf)) {
                     pp_error("can't find include file '%s'", fname.c_str());
                     return false;
                 }
@@ -1350,58 +845,26 @@ inline bool preprocess(
     return true;
 }
 
-// Replaces all preprocessor directives with blank space
-inline void remove_pp(char* buf, size_t len, std::vector<char>& out) {
-    
-    std::vector<pp_line> lines;
-
-    pp_line l;
-    l.buf = buf;
-    l.len = 0;
-    size_t cur = 0;
-    size_t cur_start = 0;
-    while(cur < len) {
-        char c = buf[cur];
-        
-        if(c == '\n') {
-            l.len = cur - cur_start;
-            lines.push_back(l);
-            l.buf = buf + cur;
-            l.len = 0;
-            
-            cur_start = cur;
-            cur++;
-        } else {
-            cur++;
-        }
+bool pp_context::preprocess(const char* buffer, size_t length, const char* full_file_path_hint) {
+    std::vector<char> buf(buffer, buffer + length);
+    std::vector<token> pp_tokens;
+    if(!tokenize(buf, pp_tokens)) {
+        return false;
     }
 
-    std::map<std::string, std::string> pp_definitions;
+    preprocess(pp_tokens, preprocessed_buffer, full_file_path_hint);
 
-    for(auto& l : lines) {
-        //printf("line: %s\n", std::string(l.buf, l.len).c_str());
-        bool is_pp_line = false;
-        size_t cur = 0;
-        while(cur < l.len) {
-            char c = l.buf[cur];
-            if(isspace(c)) {
-                ++cur;
-                continue;
-            } else if(ishash(c)) {
-                is_pp_line = true;
-                break;
-            } else {
-                is_pp_line = false;
-                break;
-            }
-        }
-        if(!is_pp_line) {
-            out.insert(out.end(), l.buf, l.buf + l.len);
-        } else {
-            // Execute preprocessor directive
-        }
-    }
+    // Debug
+    dump_buffer(preprocessed_buffer, (std::string(full_file_path_hint) + ".pp").c_str());
+
+    return true;
 }
 
+size_t pp_context::get_preprocessed_length() const {
+    return preprocessed_buffer.size();
+}
+const char* pp_context::get_preprocessed_buffer() const {
+    return preprocessed_buffer.data();
+}
 
-#endif
+}

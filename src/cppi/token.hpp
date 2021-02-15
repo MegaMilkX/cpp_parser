@@ -1,6 +1,10 @@
 #ifndef TOKEN_HPP
 #define TOKEN_HPP
 
+#include <assert.h>
+#include <algorithm>
+#include <string>
+
 #include "util.hpp"
 
 enum token_type {
@@ -191,6 +195,9 @@ struct token {
     size_t      col;
 
     std::string get_string() const {
+        if (type == tok_eof) {
+            return "";
+        }
         return std::string(string, length);
     }
     int to_int() const {

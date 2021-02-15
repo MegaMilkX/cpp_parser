@@ -1,9 +1,12 @@
-#ifndef SIMPLE_AST_TREE_HPP
-#define SIMPLE_AST_TREE_HPP
+#ifndef CPPI_PP_AST_HPP
+#define CPPI_PP_AST_HPP
 
 #include <memory>
 #include <assert.h>
 #include <stdint.h>
+
+
+namespace cppi {
 
 enum ast_node_type {
     ast_unk,
@@ -476,5 +479,8 @@ public:
         };
     }
 };
+
+} // cppi
+
 
 #endif
