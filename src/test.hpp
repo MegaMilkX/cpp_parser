@@ -4,6 +4,8 @@
 
 #include "test_include.hpp"
 
+class HelloClass {};
+
 #if defined TEST_INCLUDED
 static const int TEST_INCL;
 #endif

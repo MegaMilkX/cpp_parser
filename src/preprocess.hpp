@@ -1026,14 +1026,14 @@ inline bool preprocess(
                 pp_error("expected an identifier, got '%s'", tok.get_string().c_str());
                 return false;
             }
-            if(tok_name_match(tok, "include")) {
+            if(pp_token_group_enabled && tok_name_match(tok, "include")) {
                 pp_state = PP_INCLUDE;
                 advance();
-            } else if(tok_name_match(tok, "define")) {
+            } else if(pp_token_group_enabled && tok_name_match(tok, "define")) {
                 pp_state = PP_DEFINE;
                 advance();
                 break;
-            } else if(tok_name_match(tok, "undef")) {
+            } else if(pp_token_group_enabled && tok_name_match(tok, "undef")) {
                 pp_state = PP_UNDEF;
                 advance();
                 break;

@@ -6,7 +6,7 @@
 #include "token.hpp"
 
 // Tokenize buffer for preprocessing (include whitespace and newline)
-bool tokenize(const std::vector<char>& buffer, std::vector<token>& tokens) {
+bool tokenize(const std::vector<char>& buffer, std::vector<token>& tokens, bool skip_space_and_newline = false) {
     enum tokenizer_state {
         tstate_default,
         tstate_whitespace,
@@ -60,7 +60,7 @@ bool tokenize(const std::vector<char>& buffer, std::vector<token>& tokens) {
                 tstate = tstate_whitespace;
             } else if(isnewline(c)) {
                 advance();
-                submit_token(tok_newline);
+                if(!skip_space_and_newline) submit_token(tok_newline);
                 line++;
                 column = 0;
             } else if(isalpha(c)) { tstate = tstate_identifier; }
@@ -239,7 +239,7 @@ bool tokenize(const std::vector<char>& buffer, std::vector<token>& tokens) {
         case tstate_whitespace:
             advance();
             if(!isspace(c)) {
-                submit_token(tok_whitespace);
+                if(!skip_space_and_newline) submit_token(tok_whitespace);
                 tstate = tstate_default;
             }
             break;

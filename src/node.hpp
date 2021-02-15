@@ -1593,6 +1593,7 @@ inline int try_init_declarator_list(node_cursor c, init_declarator_list& list) {
 // === simple-declaration =============
 
 inline int try_simple_declaration(node_cursor c, simple_declaration& decl = simple_declaration()) {
+    int start = c.idx;
     int adv = 0;
     int r = try_attribute_specifier_seq(c, decl.attributes);
     c.advance(r); adv += r;
@@ -1615,6 +1616,20 @@ inline int try_simple_declaration(node_cursor c, simple_declaration& decl = simp
     if(adv) {
         printf("simple-declaration: ");
         decl.print();
+        printf("\n");
+        printf("\tunparsed: ");
+        for(int i = start; i < start + adv; ++i) {
+            node* n = c.sequence->nodes[i].get();
+            if(n->type == node_token) {
+                printf("%s ", n->tok->get_string().c_str());
+            } else if(n->type == node_brace_block) {
+                printf("{ ... } ");
+            } else if(n->type == node_bracket_block) {
+                printf("[ ... ] ");
+            } else if(n->type == node_paren_block) {
+                printf("( ... ) ");
+            }
+        }
         printf("\n");
     }
     return adv;

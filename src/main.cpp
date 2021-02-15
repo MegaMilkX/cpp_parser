@@ -18,26 +18,6 @@
 
 #include <windows.h>
 
-#define LOL <stdint.h>
-#define TEST(B) static const int A = int(B);
-#define TEST2 inline int foobar
-#define TEST3(A) static const char* a## b = #  A;
-#define TEST4(A, B) static const int A ## B;
-
-#define MY_MACRO static_assert(false);
-#define TEST5(A, B)A ## _ ## B
-
-TEST2 (int value){};
-TEST( );
-TEST3(hello)
-TEST4(, Bar)
-
-static const int boob = 3;
-template<int I>
-class MyTemplate {};
-
-static const MyTemplate<(boob<1>3)> poop;
-
 std::vector<token> pp_tokens;
 std::vector<token> tokens;
 
@@ -92,7 +72,7 @@ int main(int argc, char** argv) {
     dump_buffer(preprocessed_buffer, (fname + ".pp").c_str());
     //return 0;
 
-    tokenize(preprocessed_buffer, tokens);
+    tokenize(preprocessed_buffer, tokens, true);
 
     // Refine tokens using known keywords
     std::map<const char*, token_type> known_keyword_to_token = {
