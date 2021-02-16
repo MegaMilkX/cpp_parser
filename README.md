@@ -15,7 +15,7 @@ This is a work in progress. Not yet usable.
 - Trigraphs are not supported
 
 # Usage
-```
+``` cpp
 cppi::context ctx;
 ctx.parse("my_souce_file.hpp");
 ```
