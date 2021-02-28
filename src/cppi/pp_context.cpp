@@ -6,19 +6,13 @@
 #include "file_util.hpp"
 #include "pp_token_cursor.hpp"
 #include "pp_ast.hpp"
+#include "log_internal.hpp"
 
 
 namespace cppi {
 
 void print_tok(const token& tok) {
     printf("%s", tok.get_string().c_str());
-}
-
-void pp_context::pp_error(const char* format, ...) {
-    va_list _ArgList;
-    __crt_va_start(_ArgList, format);
-    printf((std::string("PP ERROR: ") + format).c_str(), _ArgList);
-    __crt_va_end(_ArgList);
 }
 
 std::string pp_dir_name_from_path(const std::string& path) {
@@ -210,7 +204,7 @@ bool pp_context::process_replacement_list(const pp_macro& macro, std::vector<cha
                     emit_buf(str);
                     advance();
                 } else {
-                    pp_error("token after # must be a macro parameter");
+                    LOG_ERR("token after # must be a macro parameter");
                     return false;
                 }
             } else {
@@ -365,7 +359,7 @@ bool pp_context::preprocess(
                 continue;
             } else if(is_tok(tok_hash) && fresh_line) {
                 if(ignore_directives) {
-                    pp_error("# is unexprected in a constant expression");
+                    LOG_ERR("# is unexprected in a constant expression");
                     return false;
                 }
                 pp_state = PP_DIRECTIVE;
@@ -382,7 +376,7 @@ bool pp_context::preprocess(
                         eat_whitespace();
                     }
                     if(!is_tok(tok_identifier)) {
-                        pp_error("expected an identifier");
+                        LOG_ERR("expected an identifier");
                         return false;
                     }
                     bool is_defined = macros.find(tok.get_string()) != macros.end();
@@ -390,7 +384,7 @@ bool pp_context::preprocess(
                         advance();
                         eat_whitespace();
                         if(!is_tok(tok_paren_r)) {
-                            pp_error("exprected closing parenthesis");
+                            LOG_ERR("exprected closing parenthesis");
                             return false;
                         }
                     }
@@ -419,7 +413,7 @@ bool pp_context::preprocess(
                         } else {
                             while(true) {
                                 if(is_tok(tok_eof)) {
-                                    pp_error("macro invocation missing closing parenthesis (reached eof)");
+                                    LOG_ERR("macro invocation missing closing parenthesis (reached eof)");
                                     return false;
                                 }
                                 if(is_tok(tok_paren_r)) {
@@ -518,7 +512,7 @@ bool pp_context::preprocess(
                 break;
             }
             if(!is_tok(tok_identifier)) {
-                pp_error("expected an identifier, got '%s'", tok.get_string().c_str());
+                LOG_ERR("expected an identifier, got '%s'", tok.get_string().c_str());
                 return false;
             }
             if(pp_token_group_enabled && tok_name_match(tok, "include")) {
@@ -574,11 +568,11 @@ bool pp_context::preprocess(
             }
             std::vector<char> buf;
             if(!preprocess(incl_tokens, buf, "", false, true)) {
-                pp_error("failed to preprocess tokens after #include");
+                LOG_ERR("failed to preprocess tokens after #include");
                 return false;
             }
             if(buf.empty()) {
-                pp_error("missing file path for #include");
+                LOG_ERR("missing file path for #include");
                 return false;
             }
             bool is_quotes;
@@ -587,7 +581,7 @@ bool pp_context::preprocess(
             } else if(buf[0] == '<') {
                 is_quotes = false;
             } else {
-                pp_error("expected \" or < for #include");
+                LOG_ERR("expected \" or < for #include");
                 return false;
             }
             std::string fname;
@@ -601,12 +595,12 @@ bool pp_context::preprocess(
                 ++fname_len;
             }
             if(fname_len == buf.size() - 1) {
-                pp_error("missing closing \" or > for #include");
+                LOG_ERR("missing closing \" or > for #include");
                 return false;
             }
             fname = std::string(buf.data() + 1, buf.data() + 1 + fname_len);
             if(fname.empty()) {
-                pp_error("file name required for #include");
+                LOG_ERR("file name required for #include");
                 return false;
             }
 
@@ -616,7 +610,7 @@ bool pp_context::preprocess(
                 
                 std::vector<char> fbuf;
                 if(!load_file(new_fname.c_str(), fbuf)) {
-                    pp_error("can't find include file '%s'", fname.c_str());
+                    LOG_ERR("can't find include file '%s'", fname.c_str());
                     return false;
                 }
 
@@ -636,7 +630,7 @@ bool pp_context::preprocess(
         case PP_DEFINE: {
             eat_whitespace();
             if(!is_tok(tok_identifier)) {
-                pp_error("expected an identifier, got '%s'", tok.get_string().c_str());
+                LOG_ERR("expected an identifier, got '%s'", tok.get_string().c_str());
                 return false;
             }
             auto& def = macros[tok.get_string()];
@@ -647,7 +641,7 @@ bool pp_context::preprocess(
                 def.has_parameter_list = true;
                 while(!is_tok(tok_paren_r)) {
                     if(!is_tok(tok_identifier) && !is_tok(tok_elipsis)) {
-                        pp_error("expected an identifier, got '%s'", tok.get_string().c_str());
+                        LOG_ERR("expected an identifier, got '%s'", tok.get_string().c_str());
                         return false;
                     }
                     if(is_tok(tok_elipsis)) {
@@ -665,14 +659,14 @@ bool pp_context::preprocess(
                     }
                 }
                 if(!is_tok(tok_paren_r)) {
-                    pp_error("expected ')'");
+                    LOG_ERR("expected ')'");
                     return false;
                 }
                 advance();
             }
             eat_whitespace();
             if(is_tok(tok_double_hash)) {
-                pp_error("macro replacement list can't start with '##'");
+                LOG_ERR("macro replacement list can't start with '##'");
                 return false;
             }
             bool last_token_is_double_hash = false;
@@ -686,7 +680,7 @@ bool pp_context::preprocess(
                 advance();
             }
             if(last_token_is_double_hash) {
-                pp_error("macro replacement list can't end with '##'");
+                LOG_ERR("macro replacement list can't end with '##'");
                 return false;
             }
             pp_state = PP_DEFAULT;
@@ -695,7 +689,7 @@ bool pp_context::preprocess(
         case PP_UNDEF: {
             eat_whitespace();
             if(!is_tok(tok_identifier)) {
-                pp_error("expected an identifier, got '%s'", tok.get_string().c_str());
+                LOG_ERR("expected an identifier, got '%s'", tok.get_string().c_str());
                 return false;
             }
             macros.erase(tok.get_string());
@@ -720,7 +714,7 @@ bool pp_context::preprocess(
             }
             int val;
             if(!pp_eval_constant_expression(expr_tokens, val)) {
-                pp_error("failed to evaluate constant expression");
+                LOG_ERR("failed to evaluate constant expression");
                 return false;
             }
             bool group_enabled = val != 0;
@@ -738,7 +732,7 @@ bool pp_context::preprocess(
         case PP_IFDEF: {
             eat_whitespace();
             if(!is_tok(tok_identifier)) {
-                pp_error("expected an identifier, got '%s'", tok.get_string().c_str());
+                LOG_ERR("expected an identifier, got '%s'", tok.get_string().c_str());
                 return false;
             }
             auto it = macros.find(tok.get_string());
@@ -759,7 +753,7 @@ bool pp_context::preprocess(
         case PP_IFNDEF: {
             eat_whitespace();
             if(!is_tok(tok_identifier)) {
-                pp_error("expected an identifier, got '%s'", tok.get_string().c_str());
+                LOG_ERR("expected an identifier, got '%s'", tok.get_string().c_str());
                 return false;
             }
             auto it = macros.find(tok.get_string());
@@ -779,12 +773,12 @@ bool pp_context::preprocess(
         }
         case PP_ELSE: {
             if(conditional_stack.empty()) {
-                pp_error("unexpected else directive");
+                LOG_ERR("unexpected else directive");
                 return false;
             }
             auto& cond_state = conditional_stack.back();
             if(cond_state.type != COND_ELIF && cond_state.type != COND_IF) {
-                pp_error("unexpected else directive");
+                LOG_ERR("unexpected else directive");
                 return false;
             }
 
@@ -800,12 +794,12 @@ bool pp_context::preprocess(
         }
         case PP_ELIF: {
             if(conditional_stack.empty()) {
-                pp_error("unexpected else directive");
+                LOG_ERR("unexpected else directive");
                 return false;
             }
             auto& cond_state = conditional_stack.back();
             if(cond_state.type != COND_ELIF && cond_state.type != COND_IF) {
-                pp_error("unexpected else directive");
+                LOG_ERR("unexpected else directive");
                 return false;
             }
             eat_whitespace();
@@ -816,7 +810,7 @@ bool pp_context::preprocess(
             }
             int val;
             if(!pp_eval_constant_expression(expr_tokens, val)) {
-                pp_error("failed to evaluate constant expression");
+                LOG_ERR("failed to evaluate constant expression");
                 return false;
             }
             bool group_enabled = val != 0;
@@ -830,7 +824,7 @@ bool pp_context::preprocess(
         }
         case PP_ENDIF:
             if(conditional_stack.empty()) {
-                pp_error("unexpected endif directive");
+                LOG_ERR("unexpected endif directive");
                 return false;
             }
             conditional_stack.pop_back();
@@ -852,7 +846,9 @@ bool pp_context::preprocess(const char* buffer, size_t length, const char* full_
         return false;
     }
 
-    preprocess(pp_tokens, preprocessed_buffer, full_file_path_hint);
+    if(!preprocess(pp_tokens, preprocessed_buffer, full_file_path_hint)) {
+        return false;
+    }
 
     // Debug
     dump_buffer(preprocessed_buffer, (std::string(full_file_path_hint) + ".pp").c_str());

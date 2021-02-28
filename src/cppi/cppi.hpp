@@ -2,6 +2,7 @@
 #define CPP_INSPECTOR_HPP
 
 
+#include "log.hpp"
 #include "context.hpp"
 
 

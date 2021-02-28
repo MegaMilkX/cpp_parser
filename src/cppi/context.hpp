@@ -2,6 +2,7 @@
 #define CPP_INSPECTOR_CONTEXT_HPP
 
 #include "pp_context.hpp"
+#include "options.hpp"
 
 
 namespace cppi {
